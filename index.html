@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#22273A" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Learned" />
+<title>What I've Learned</title>
+
+<!-- Web App Manifest embedded as a data URI so no separate file/server is needed -->
+<link rel="manifest" id="manifest-placeholder" />
+<link rel="apple-touch-icon" id="apple-icon" />
+
+<style>
+  :root {
+    --paper: #FAF7F0;
+    --paper-dim: #F1ECE0;
+    --ink: #22273A;
+    --ink-faint: #6B7080;
+    --sage: #7A8B6F;
+    --gold: #B8935A;
+    --rule: #D8D3C7;
+    --danger: #B0483F;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    min-height: 100vh;
+    overscroll-behavior-y: contain;
+  }
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sans { font-family: 'Helvetica Neue', Arial, sans-serif; }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea { font-family: inherit; }
+  textarea:focus, input:focus, button:focus-visible {
+    outline: 2px solid var(--sage); outline-offset: 2px;
+  }
+
+  @keyframes inkPulse {
+    0% { box-shadow: 0 0 0 0 rgba(184,147,90,0.45); }
+    70% { box-shadow: 0 0 0 14px rgba(184,147,90,0); }
+    100% { box-shadow: 0 0 0 0 rgba(184,147,90,0); }
+  }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none !important; } }
+
+  .header {
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--rule);
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; background: var(--paper); z-index: 5;
+  }
+  .title { font-size: 20px; font-weight: 700; letter-spacing: 0.2px; }
+  .subtitle { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
+  .back-btn { background: none; border: none; color: var(--ink-faint); font-size: 26px; padding: 0 8px 0 0; line-height: 1; }
+
+  .add-btn {
+    background: var(--ink); color: var(--paper); border: none; border-radius: 20px;
+    padding: 9px 16px; display: flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600;
+  }
+
+  .search-wrap { padding: 14px 20px 4px; position: relative; }
+  .search {
+    width: 100%; padding: 10px 12px 10px 34px; border-radius: 10px;
+    border: 1px solid var(--rule); background: var(--paper-dim);
+    font-size: 14px; color: var(--ink);
+  }
+  .search-icon { position: absolute; left: 32px; top: 24px; color: var(--ink-faint); }
+
+  .tabs { display: flex; gap: 8px; overflow-x: auto; padding: 14px 20px 6px; }
+  .tab {
+    flex-shrink: 0; background: var(--paper-dim); border: 1px solid var(--rule);
+    border-radius: 4px 4px 0 0; border-bottom: 3px solid var(--sage);
+    padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--ink);
+    display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .tab .count { color: var(--ink-faint); font-weight: 400; }
+
+  .list { padding: 10px 20px 60px; }
+  .entry {
+    border-bottom: 1px solid var(--rule); padding: 14px 4px;
+    display: flex; justify-content: space-between; gap: 10px;
+  }
+  .entry-text { font-size: 15.5px; line-height: 1.5; }
+  .entry-meta { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--ink-faint); }
+  .entry-topic { color: var(--sage); font-weight: 600; }
+  .del-btn { background: none; border: none; color: var(--ink-faint); font-size: 12px; align-self: flex-start; padding: 4px; }
+  .del-btn.confirm { color: var(--danger); }
+
+  .empty { text-align: center; padding: 48px 20px; color: var(--ink-faint); }
+  .empty .big { font-size: 15px; }
+  .empty .small { font-size: 13px; margin-top: 4px; }
+
+  /* Compose */
+  .compose { padding: 16px 20px 24px; display: flex; flex-direction: column; min-height: calc(100vh - 70px); }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--ink-faint); margin-bottom: 8px; }
+  .topic-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    background: var(--paper-dim); color: var(--ink); border: 1px solid var(--rule);
+    border-radius: 16px; padding: 7px 13px; font-size: 13px; font-weight: 600;
+  }
+  .chip.active { background: var(--sage); color: var(--paper); border-color: var(--sage); }
+  .chip.dashed { background: none; border: 1px dashed var(--rule); color: var(--ink-faint); font-weight: 400; }
+  .new-topic-row { display: flex; gap: 8px; margin-top: 8px; }
+  .new-topic-input { flex: 1; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--rule); font-size: 13px; }
+  .use-btn { background: var(--ink); color: var(--paper); border: none; border-radius: 8px; padding: 9px 14px; font-size: 13px; }
+
+  .draft {
+    flex: 1; min-height: 160px; width: 100%; padding: 14px; border-radius: 12px;
+    border: 1px solid var(--rule); background: var(--paper-dim);
+    font-family: 'Iowan Old Style', Georgia, serif; font-size: 16px; line-height: 1.5;
+    color: var(--ink); resize: vertical; margin-top: 14px;
+  }
+  .controls { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+  .mic {
+    width: 56px; height: 56px; border-radius: 50%; border: none; background: var(--ink);
+    color: var(--paper); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .mic.on { background: var(--gold); animation: inkPulse 1.6s infinite; }
+  .mic-status { flex: 1; font-size: 13px; color: var(--ink-faint); font-weight: 600; }
+  .mic-status.on { color: var(--gold); }
+  .save-btn {
+    background: var(--rule); color: var(--paper); border: none; border-radius: 24px;
+    padding: 13px 22px; font-size: 14px; font-weight: 700;
+  }
+  .save-btn.ready { background: var(--sage); }
+
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px;
+    background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 20px;
+    font-size: 13px; z-index: 20; opacity: 0; transition: opacity 0.2s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  .footer-actions { padding: 8px 20px 28px; display: flex; gap: 12px; justify-content: center; }
+  .link-btn { background: none; border: none; color: var(--sage); font-size: 12.5px; text-decoration: underline; }
+
+  .install-banner {
+    margin: 12px 20px 0; padding: 12px 14px; background: var(--paper-dim);
+    border: 1px solid var(--rule); border-radius: 12px; display: flex;
+    align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px;
+  }
+  .install-banner button { background: var(--ink); color: var(--paper); border: none; border-radius: 16px; padding: 8px 14px; font-size: 12.5px; font-weight: 600; }
+  .install-banner .dismiss { background: none; color: var(--ink-faint); padding: 4px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   Storage: IndexedDB (persistent, on-device, works offline)
+   ============================================================ */
+const DB_NAME = 'learning-journal';
+const STORE = 'kv';
+let dbPromise = null;
+
+function openDB() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return dbPromise;
+}
+async function dbGet(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function dbSet(key, val) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(val, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/* Ask the browser to keep this data and not evict it */
+async function requestPersistence() {
+  if (navigator.storage && navigator.storage.persist) {
+    try { await navigator.storage.persist(); } catch (e) {}
+  }
+}
+
+/* ============================================================
+   App state
+   ============================================================ */
+let state = {
+  entries: [],
+  topics: ['General'],
+  view: 'list',      // list | topic | compose
+  activeTopic: null,
+  search: '',
+  draftText: '',
+  draftTopic: 'General',
+  showNewTopic: false,
+  loaded: false,
+};
+
+let recognition = null;
+let listening = false;
+let interimText = '';
+let deferredPrompt = null;
+
+async function loadState() {
+  try {
+    const e = await dbGet('entries');
+    const t = await dbGet('topics');
+    if (Array.isArray(e)) state.entries = e;
+    if (Array.isArray(t) && t.length) state.topics = t;
+  } catch (err) { /* fresh start */ }
+  state.loaded = true;
+  render();
+}
+async function saveEntries() { try { await dbSet('entries', state.entries); } catch(e){ toast('Save failed'); } }
+async function saveTopics() { try { await dbSet('topics', state.topics); } catch(e){} }
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  if (d < 7) return d + 'd ago';
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+/* ============================================================
+   Speech recognition
+   ============================================================ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function startListening() {
+  if (!SR) { toast('Voice not supported here'); return; }
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  recognition.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const tr = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        state.draftText = (state.draftText ? state.draftText + ' ' : '') + tr.trim();
+        state.draftText = state.draftText.trim();
+      } else {
+        interim += tr;
+      }
+    }
+    interimText = interim;
+    updateDraftField();
+  };
+  recognition.onerror = () => { listening = false; interimText=''; render(); };
+  recognition.onend = () => { listening = false; interimText=''; render(); };
+  recognition.start();
+  listening = true;
+  render();
+}
+function stopListening() {
+  if (recognition) recognition.stop();
+  listening = false;
+  interimText = '';
+}
+function updateDraftField() {
+  const ta = document.getElementById('draft');
+  if (ta) {
+    ta.value = state.draftText + (interimText ? (state.draftText ? ' ' : '') + interimText : '');
+    const status = document.getElementById('mic-status');
+    if (status) { status.textContent = listening ? 'Listening…' : (SR ? 'Tap to speak' : ''); }
+  }
+}
+
+/* ============================================================
+   Actions
+   ============================================================ */
+function go(view, opts = {}) {
+  if (listening) stopListening();
+  state.view = view;
+  if (opts.topic !== undefined) state.activeTopic = opts.topic;
+  if (view === 'compose') {
+    state.draftText = '';
+    state.draftTopic = opts.topic || state.activeTopic || 'General';
+    state.showNewTopic = false;
+  }
+  render();
+}
+function setSearch(v) { state.search = v; renderListBody(); }
+function pickDraftTopic(t) { state.draftTopic = t; render(); }
+function toggleNewTopic() { state.showNewTopic = !state.showNewTopic; render(); }
+function addTopic() {
+  const inp = document.getElementById('new-topic-input');
+  const val = (inp.value || '').trim();
+  if (!val) return;
+  if (!state.topics.includes(val)) { state.topics.push(val); saveTopics(); }
+  state.draftTopic = val;
+  state.showNewTopic = false;
+  render();
+}
+async function saveEntry() {
+  const ta = document.getElementById('draft');
+  const text = (ta ? ta.value : state.draftText).trim();
+  if (!text) return;
+  const entry = { id: 'e_' + Date.now(), text, topic: state.draftTopic, createdAt: new Date().toISOString() };
+  state.entries.unshift(entry);
+  if (!state.topics.includes(state.draftTopic)) { state.topics.push(state.draftTopic); await saveTopics(); }
+  await saveEntries();
+  if (listening) stopListening();
+  state.activeTopic = state.draftTopic;
+  state.view = 'list';
+  render();
+  toast('Saved');
+}
+async function deleteEntry(id) {
+  state.entries = state.entries.filter(e => e.id !== id);
+  await saveEntries();
+  render();
+}
+
+/* Export / backup */
+function exportData() {
+  const blob = new Blob([JSON.stringify({ entries: state.entries, topics: state.topics }, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'learning-journal-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function exportReadable() {
+  if (!state.entries.length) { toast('Nothing to export yet'); return; }
+  const date = new Date().toISOString().slice(0,10);
+  let out = "WHAT I'VE LEARNED\nExported " + new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'}) + "\n";
+  out += "".padEnd(40,'=') + "\n\n";
+  // Group by topic, newest first within each
+  state.topics.forEach(topic => {
+    const items = state.entries.filter(e => e.topic === topic);
+    if (!items.length) return;
+    out += topic.toUpperCase() + "\n" + "".padEnd(topic.length,'-') + "\n\n";
+    items.forEach(e => {
+      const d = new Date(e.createdAt).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+      out += "• " + e.text + "\n  (" + d + ")\n\n";
+    });
+    out += "\n";
+  });
+  download('what-i-learned-' + date + '.txt', out, 'text/plain');
+  toast('Downloaded');
+}
+function importData() {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'application/json';
+  inp.onchange = () => {
+    const file = inp.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (Array.isArray(data.entries)) state.entries = data.entries;
+        if (Array.isArray(data.topics)) state.topics = data.topics;
+        await saveEntries(); await saveTopics();
+        render(); toast('Backup restored');
+      } catch (e) { toast('Could not read that file'); }
+    };
+    reader.readAsText(file);
+  };
+  inp.click();
+}
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+const ICONS = {
+  mic: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>',
+  stop: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  plus: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  search: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  book: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+};
+
+function render() {
+  const app = document.getElementById('app');
+  if (!state.loaded) {
+    app.innerHTML = '<div style="height:100vh;display:flex;align-items:center;justify-content:center;color:var(--ink-faint)">Opening your journal…</div>';
+    return;
+  }
+  if (state.view === 'compose') { app.innerHTML = composeHTML(); afterCompose(); return; }
+  app.innerHTML = headerHTML() + bodyHTML();
+  attachListHandlers();
+}
+
+function headerHTML() {
+  const back = state.view !== 'list'
+    ? '<button class="back-btn" onclick="go(\'list\')" aria-label="Back">‹</button>' : '';
+  let title, sub = '';
+  if (state.view === 'topic') title = esc(state.activeTopic);
+  else { title = 'What I\u2019ve learned'; sub = `<div class="subtitle sans">${state.entries.length} ${state.entries.length===1?'entry':'entries'} · ${state.topics.length} topics</div>`; }
+  const add = state.view === 'list'
+    ? `<button class="add-btn sans" onclick="go('compose')">${ICONS.plus} Add</button>` : '';
+  return `<div class="header"><div style="display:flex;align-items:center;gap:6px">${back}<div><div class="title">${title}</div>${sub}</div></div>${add}</div>`;
+}
+
+function bodyHTML() {
+  if (state.view === 'topic') return topicBodyHTML();
+  return `
+    ${installBannerHTML()}
+    <div class="search-wrap"><span class="search-icon">${ICONS.search}</span>
+      <input class="search sans" id="search" placeholder="Search everything you've learned" oninput="setSearch(this.value)" value="${esc(state.search)}"/>
+    </div>
+    <div class="tabs">${state.topics.map(t => {
+      const c = state.entries.filter(e => e.topic === t).length;
+      return `<button class="tab sans" onclick="go('topic',{topic:'${esc(t).replace(/'/g,"\\'")}'})">${esc(t)}<span class="count">${c}</span></button>`;
+    }).join('')}</div>
+    <div id="list-body"></div>
+    <div class="footer-actions">
+      <button class="link-btn sans" onclick="exportReadable()">Download notes</button>
+      <button class="link-btn sans" onclick="exportData()">Backup</button>
+      <button class="link-btn sans" onclick="importData()">Restore</button>
+    </div>`;
+}
+
+function renderListBody() {
+  const el = document.getElementById('list-body');
+  if (!el) return;
+  const items = state.entries.filter(e =>
+    state.search ? e.text.toLowerCase().includes(state.search.toLowerCase()) : true
+  );
+  if (state.entries.length === 0) {
+    el.innerHTML = `<div class="empty">${ICONS.book}<div class="big" style="margin-top:12px">Nothing logged yet.</div><div class="small sans">Tap Add and speak the first thing you learned today.</div></div>`;
+    return;
+  }
+  const header = state.search ? `<div class="sans" style="font-size:12px;color:var(--ink-faint);padding:10px 20px 0">${items.length} result${items.length===1?'':'s'}</div>` : '';
+  el.innerHTML = header + '<div class="list">' + items.map(entryHTML).join('') + '</div>';
+}
+
+function topicBodyHTML() {
+  const items = state.entries.filter(e => e.topic === state.activeTopic);
+  const addBtn = `<button onclick="go('compose',{topic:'${esc(state.activeTopic).replace(/'/g,"\\'")}'})" style="width:calc(100% - 40px);margin:16px 20px 4px;background:var(--paper-dim);border:1px dashed var(--rule);border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--sage);font-weight:600;font-size:14px" class="sans">${ICONS.plus} Add to ${esc(state.activeTopic)}</button>`;
+  const body = items.length
+    ? '<div class="list">' + items.map(e => entryHTML(e, false)).join('') + '</div>'
+    : `<div class="empty"><div class="big">No entries in ${esc(state.activeTopic)} yet.</div></div>`;
+  return addBtn + body;
+}
+
+function entryHTML(e, showTopic = true) {
+  const topic = showTopic ? `<span class="entry-topic">${esc(e.topic)}</span>` : '';
+  return `<div class="entry">
+    <div style="flex:1;min-width:0">
+      <div class="entry-text">${esc(e.text)}</div>
+      <div class="entry-meta sans">${topic}<span>${timeAgo(e.createdAt)}</span></div>
+    </div>
+    <button class="del-btn sans" data-id="${e.id}" onclick="handleDelete(this)">${ICONS.x}</button>
+  </div>`;
+}
+
+let pendingDelete = null;
+function handleDelete(btn) {
+  const id = btn.getAttribute('data-id');
+  if (pendingDelete === id) { pendingDelete = null; deleteEntry(id); }
+  else {
+    pendingDelete = id;
+    btn.classList.add('confirm'); btn.textContent = 'Confirm?';
+    setTimeout(() => { if (pendingDelete === id) { pendingDelete = null; render(); } }, 3000);
+  }
+}
+
+function composeHTML() {
+  const chips = state.topics.map(t =>
+    `<button class="chip ${state.draftTopic===t?'active':''} sans" onclick="pickDraftTopic('${esc(t).replace(/'/g,"\\'")}')">${esc(t)}</button>`
+  ).join('');
+  const newTopic = state.showNewTopic
+    ? `<div class="new-topic-row"><input class="new-topic-input sans" id="new-topic-input" placeholder="e.g. Cooking, Investing, Spanish" onkeydown="if(event.key==='Enter')addTopic()"/><button class="use-btn sans" onclick="addTopic()">Use</button></div>`
+    : '';
+  const newBtn = state.showNewTopic ? '' : `<button class="chip dashed sans" onclick="toggleNewTopic()">+ New topic</button>`;
+  const micBtn = SR ? `<button class="mic ${listening?'on pulse':''}" id="mic" onclick="toggleMic()" aria-label="${listening?'Stop':'Record'}">${listening?ICONS.stop:ICONS.mic}</button>` : '';
+  const notSupported = !SR ? `<div class="sans" style="font-size:12px;color:var(--ink-faint);margin-top:8px">Voice input isn't available in this browser — you can still type your entry.</div>` : '';
+  return `
+    <div class="header"><div style="display:flex;align-items:center;gap:6px"><button class="back-btn" onclick="go('list')">‹</button><div class="title">New entry</div></div></div>
+    <div class="compose">
+      <div class="label sans">Topic</div>
+      <div class="topic-row">${chips}${newBtn}</div>
+      ${newTopic}
+      <textarea class="draft" id="draft" placeholder="Speak or type what you learned…"></textarea>
+      ${notSupported}
+      <div class="controls">
+        ${micBtn}
+        <div class="mic-status sans ${listening?'on':''}" id="mic-status">${listening?'Listening…':(SR?'Tap to speak':'')}</div>
+        <button class="save-btn sans" id="save" onclick="saveEntry()">Save entry</button>
+      </div>
+    </div>`;
+}
+
+function afterCompose() {
+  const ta = document.getElementById('draft');
+  if (ta) {
+    ta.value = state.draftText;
+    ta.oninput = () => { state.draftText = ta.value; updateSaveBtn(); };
+    updateSaveBtn();
+  }
+  if (state.showNewTopic) { const ni = document.getElementById('new-topic-input'); if (ni) ni.focus(); }
+}
+function updateSaveBtn() {
+  const btn = document.getElementById('save');
+  const ta = document.getElementById('draft');
+  if (btn && ta) btn.classList.toggle('ready', !!ta.value.trim());
+}
+function toggleMic() {
+  if (listening) stopListening(); else startListening();
+  const ta = document.getElementById('draft'); if (ta) state.draftText = ta.value;
+  render(); afterCompose();
+}
+
+function attachListHandlers() { renderListBody(); }
+
+/* ============================================================
+   Install banner (Add to Home Screen)
+   ============================================================ */
+function installBannerHTML() {
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  if (isStandalone) return '';
+  if (deferredPrompt) {
+    return `<div class="install-banner sans"><span>Install this as an app on your home screen.</span><span><button onclick="doInstall()">Install</button><button class="dismiss" onclick="this.closest('.install-banner').remove()">✕</button></span></div>`;
+  }
+  return '';
+}
+function doInstall() {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.finally(() => { deferredPrompt = null; render(); });
+}
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (state.loaded && state.view === 'list') render();
+});
+
+/* ============================================================
+   PWA manifest + icon + service worker (all inline, no server)
+   ============================================================ */
+function buildIcon() {
+  // An SVG icon rendered to a data URI — a book/ledger mark in the app palette
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+    <rect width="512" height="512" rx="112" fill="#22273A"/>
+    <g transform="translate(140,120)">
+      <rect x="0" y="0" width="232" height="272" rx="18" fill="#FAF7F0"/>
+      <rect x="0" y="0" width="70" height="272" rx="18" fill="#7A8B6F"/>
+      <line x1="104" y1="70" x2="330" y2="70" stroke="#D8D3C7" stroke-width="14" stroke-linecap="round" transform="translate(-14,0)"/>
+      <line x1="104" y1="130" x2="300" y2="130" stroke="#D8D3C7" stroke-width="14" stroke-linecap="round" transform="translate(-14,0)"/>
+      <line x1="104" y1="190" x2="270" y2="190" stroke="#B8935A" stroke-width="14" stroke-linecap="round" transform="translate(-14,0)"/>
+    </g>
+  </svg>`;
+  return 'data:image/svg+xml;base64,' + btoa(svg);
+}
+function setupManifest() {
+  const iconUri = buildIcon();
+  document.getElementById('apple-icon').setAttribute('href', iconUri);
+  const manifest = {
+    name: "What I've Learned",
+    short_name: "Learned",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#FAF7F0",
+    theme_color: "#22273A",
+    icons: [
+      { src: iconUri, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
+    ]
+  };
+  const manifestUri = 'data:application/json;base64,' + btoa(unescape(encodeURIComponent(JSON.stringify(manifest))));
+  document.getElementById('manifest-placeholder').setAttribute('href', manifestUri);
+}
+
+/* Minimal service worker for offline use, registered from an inline blob */
+function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  const swCode = `
+    const CACHE = 'lj-v1';
+    self.addEventListener('install', (e) => { self.skipWaiting(); });
+    self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); });
+    self.addEventListener('fetch', (e) => {
+      e.respondWith(
+        caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
+          return caches.open(CACHE).then(c => { try { c.put(e.request, resp.clone()); } catch(_){} return resp; });
+        }).catch(() => caches.match('./')))
+      );
+    });
+  `;
+  const blob = new Blob([swCode], { type: 'text/javascript' });
+  const url = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(url).catch(() => {});
+}
+
+/* ============================================================
+   Boot
+   ============================================================ */
+setupManifest();
+registerSW();
+requestPersistence();
+loadState();
+</script>
+</body>
+</html>
