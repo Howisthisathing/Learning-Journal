@@ -204,18 +204,66 @@ async function requestPersistence() {
 }
 
 /* ============================================================
+   Encryption: PBKDF2 (key derivation) + AES-GCM (encryption)
+   Both built into the browser's WebCrypto API — no libraries.
+   ============================================================ */
+let cryptoKey = null; // in-memory only, cleared on lock/reload
+
+function randomBytes(n) { return crypto.getRandomValues(new Uint8Array(n)); }
+function bufToB64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function b64ToBuf(b64) { return Uint8Array.from(atob(b64), c => c.charCodeAt(0)); }
+
+async function deriveKey(password, saltB64) {
+  const salt = b64ToBuf(saltB64);
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+async function encryptJSON(key, obj) {
+  const iv = randomBytes(12);
+  const enc = new TextEncoder();
+  const data = enc.encode(JSON.stringify(obj));
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+  return { iv: bufToB64(iv), data: bufToB64(cipher) };
+}
+async function decryptJSON(key, payload) {
+  const iv = b64ToBuf(payload.iv);
+  const cipher = b64ToBuf(payload.data);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+/* A verifier so we can check a password is correct before touching real data */
+async function makeVerifier(key) {
+  return encryptJSON(key, { check: 'ok' });
+}
+async function verifyKey(key, verifier) {
+  try {
+    const result = await decryptJSON(key, verifier);
+    return result && result.check === 'ok';
+  } catch (e) { return false; }
+}
+
+/* ============================================================
    App state
    ============================================================ */
 let state = {
   entries: [],
   topics: ['General'],
-  view: 'list',      // list | topic | compose
+  view: 'list',      // lock | setup | list | topic | compose
   activeTopic: null,
   search: '',
   draftText: '',
   draftTopic: 'General',
   showNewTopic: false,
   loaded: false,
+  hasPassword: false,
+  unlockError: '',
 };
 
 let recognition = null;
@@ -225,16 +273,48 @@ let deferredPrompt = null;
 
 async function loadState() {
   try {
-    const e = await dbGet('entries');
-    const t = await dbGet('topics');
-    if (Array.isArray(e)) state.entries = e;
-    if (Array.isArray(t) && t.length) state.topics = t;
-  } catch (err) { /* fresh start */ }
-  state.loaded = true;
+    const auth = await dbGet('auth'); // { salt, verifier }
+    state.hasPassword = !!auth;
+    if (auth) {
+      state.view = 'lock';
+      state.loaded = true;
+      render();
+      return; // wait for unlock before loading entries
+    } else {
+      state.view = 'setup';
+      state.loaded = true;
+      render();
+      return; // wait for password creation
+    }
+  } catch (err) {
+    state.view = 'setup';
+    state.loaded = true;
+    render();
+  }
+}
+async function loadEncryptedData() {
+  try {
+    const enc = await dbGet('data'); // { iv, data }
+    if (enc) {
+      const obj = await decryptJSON(cryptoKey, enc);
+      state.entries = Array.isArray(obj.entries) ? obj.entries : [];
+      state.topics = (Array.isArray(obj.topics) && obj.topics.length) ? obj.topics : ['General'];
+    }
+  } catch (err) {
+    toast('Could not decrypt saved entries');
+  }
+  state.view = 'list';
   render();
 }
-async function saveEntries() { try { await dbSet('entries', state.entries); } catch(e){ toast('Save failed'); } }
-async function saveTopics() { try { await dbSet('topics', state.topics); } catch(e){} }
+async function persistAll() {
+  if (!cryptoKey) return;
+  try {
+    const enc = await encryptJSON(cryptoKey, { entries: state.entries, topics: state.topics });
+    await dbSet('data', enc);
+  } catch (e) { toast('Save failed'); }
+}
+async function saveEntries() { await persistAll(); }
+async function saveTopics() { await persistAll(); }
 
 /* ============================================================
    Helpers
@@ -303,6 +383,50 @@ function updateDraftField() {
     const status = document.getElementById('mic-status');
     if (status) { status.textContent = listening ? 'Listening…' : (SR ? 'Tap to speak' : ''); }
   }
+}
+
+/* ============================================================
+   Password setup / unlock
+   ============================================================ */
+async function submitSetup() {
+  const p1 = document.getElementById('setup-pw').value;
+  const p2 = document.getElementById('setup-pw2').value;
+  const errEl = document.getElementById('setup-err');
+  if (!p1 || p1.length < 4) { errEl.textContent = 'Use at least 4 characters.'; return; }
+  if (p1 !== p2) { errEl.textContent = "Passwords don't match."; return; }
+  const salt = bufToB64(randomBytes(16));
+  const key = await deriveKey(p1, salt);
+  const verifier = await makeVerifier(key);
+  await dbSet('auth', { salt, verifier });
+  cryptoKey = key;
+  state.hasPassword = true;
+  await persistAll(); // writes empty state encrypted
+  state.view = 'list';
+  render();
+  toast('Password set');
+}
+async function submitUnlock() {
+  const pw = document.getElementById('unlock-pw').value;
+  const errEl = document.getElementById('unlock-err');
+  errEl.textContent = '';
+  try {
+    const auth = await dbGet('auth');
+    const key = await deriveKey(pw, auth.salt);
+    const ok = await verifyKey(key, auth.verifier);
+    if (!ok) { errEl.textContent = 'Incorrect password.'; return; }
+    cryptoKey = key;
+    render(); // show a brief loading state
+    await loadEncryptedData();
+  } catch (e) {
+    errEl.textContent = 'Something went wrong. Try again.';
+  }
+}
+function lockApp() {
+  cryptoKey = null;
+  state.entries = [];
+  state.view = 'lock';
+  state.search = '';
+  render();
 }
 
 /* ============================================================
@@ -425,6 +549,8 @@ function render() {
     app.innerHTML = '<div style="height:100vh;display:flex;align-items:center;justify-content:center;color:var(--ink-faint)">Opening your journal…</div>';
     return;
   }
+  if (state.view === 'setup') { app.innerHTML = setupHTML(); afterSetup(); return; }
+  if (state.view === 'lock') { app.innerHTML = lockHTML(); afterLock(); return; }
   if (state.view === 'compose') { app.innerHTML = composeHTML(); afterCompose(); return; }
   app.innerHTML = headerHTML() + bodyHTML();
   attachListHandlers();
@@ -437,7 +563,7 @@ function headerHTML() {
   if (state.view === 'topic') title = esc(state.activeTopic);
   else { title = 'What I\u2019ve learned'; sub = `<div class="subtitle sans">${state.entries.length} ${state.entries.length===1?'entry':'entries'} · ${state.topics.length} topics</div>`; }
   const add = state.view === 'list'
-    ? `<button class="add-btn sans" onclick="go('compose')">${ICONS.plus} Add</button>` : '';
+    ? `<div style="display:flex;gap:8px"><button class="back-btn" onclick="lockApp()" aria-label="Lock" title="Lock" style="font-size:18px">🔒</button><button class="add-btn sans" onclick="go('compose')">${ICONS.plus} Add</button></div>` : '';
   return `<div class="header"><div style="display:flex;align-items:center;gap:6px">${back}<div><div class="title">${title}</div>${sub}</div></div>${add}</div>`;
 }
 
@@ -505,7 +631,49 @@ function handleDelete(btn) {
   }
 }
 
+function setupHTML() {
+  return `
+    <div style="min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:28px 24px;">
+      <div style="text-align:center;margin-bottom:24px">
+        ${ICONS.book}
+        <div class="title" style="font-size:22px;margin-top:10px">Protect your journal</div>
+        <div class="sans" style="font-size:13px;color:var(--ink-faint);margin-top:8px;line-height:1.5">
+          Set a password to encrypt everything you write.<br/>
+          <strong>There's no way to reset it</strong> — if you forget it, your entries can't be recovered.
+        </div>
+      </div>
+      <input type="password" id="setup-pw" class="new-topic-input sans" placeholder="Create a password" style="margin-bottom:10px;padding:12px;font-size:15px"/>
+      <input type="password" id="setup-pw2" class="new-topic-input sans" placeholder="Confirm password" style="margin-bottom:8px;padding:12px;font-size:15px"/>
+      <div id="setup-err" class="sans" style="color:var(--danger);font-size:13px;min-height:18px;margin-bottom:10px"></div>
+      <button class="save-btn ready sans" style="width:100%;padding:14px" onclick="submitSetup()">Set password &amp; continue</button>
+    </div>`;
+}
+function afterSetup() {
+  const p2 = document.getElementById('setup-pw2');
+  if (p2) p2.onkeydown = (e) => { if (e.key === 'Enter') submitSetup(); };
+  const p1 = document.getElementById('setup-pw');
+  if (p1) p1.focus();
+}
+function lockHTML() {
+  return `
+    <div style="min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:28px 24px;">
+      <div style="text-align:center;margin-bottom:24px">
+        ${ICONS.book}
+        <div class="title" style="font-size:22px;margin-top:10px">What I've learned</div>
+        <div class="sans" style="font-size:13px;color:var(--ink-faint);margin-top:6px">Enter your password to unlock.</div>
+      </div>
+      <input type="password" id="unlock-pw" class="new-topic-input sans" placeholder="Password" style="margin-bottom:8px;padding:12px;font-size:15px"/>
+      <div id="unlock-err" class="sans" style="color:var(--danger);font-size:13px;min-height:18px;margin-bottom:10px"></div>
+      <button class="save-btn ready sans" style="width:100%;padding:14px" onclick="submitUnlock()">Unlock</button>
+    </div>`;
+}
+function afterLock() {
+  const pw = document.getElementById('unlock-pw');
+  if (pw) { pw.focus(); pw.onkeydown = (e) => { if (e.key === 'Enter') submitUnlock(); }; }
+}
+
 function composeHTML() {
+
   const chips = state.topics.map(t =>
     `<button class="chip ${state.draftTopic===t?'active':''} sans" onclick="pickDraftTopic('${esc(t).replace(/'/g,"\\'")}')">${esc(t)}</button>`
   ).join('');
